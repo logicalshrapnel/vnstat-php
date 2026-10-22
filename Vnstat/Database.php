@@ -72,7 +72,7 @@ class Database
         $command = 'vnstat --json';
 
         if (null !== $interface) {
-            $command .= sprintf(' --iface %s', $interface);
+            $command .= sprintf(' --iface %s', escapeshellarg($interface));
         }
 
         $data = json_decode(shell_exec($command), true);
