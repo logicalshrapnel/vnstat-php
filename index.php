@@ -33,30 +33,38 @@ if (count($_GET) <= 1) {
 	$showsent = $showrec = $twoAxes = True;
 }
 
+/* Return a GET parameter if it is a string matching the pattern, otherwise the default */
+function getValidParam($name, $pattern, $default) {
+	if (array_key_exists($name, $_GET) && is_string($_GET[$name]) && preg_match($pattern, $_GET[$name])) {
+		return $_GET[$name];
+	}
+	return $default;
+}
+
 /* Set  graph formats */
-$hourgraphtype = (array_key_exists('hourgraphtype', $_GET) ? $_GET['hourgraphtype'] : 'bar');
-$daygraphtype = (array_key_exists('daygraphtype', $_GET) ? $_GET['daygraphtype'] : 'bar');
-$monthgraphtype = (array_key_exists('monthgraphtype', $_GET) ? $_GET['monthgraphtype'] : 'bar');
-$comparegraphtype = (array_key_exists('comparegraphtype', $_GET) ? $_GET['comparegraphtype'] : 'bar');
+$hourgraphtype = getValidParam('hourgraphtype', '/^(bar|line)\z/', 'bar');
+$daygraphtype = getValidParam('daygraphtype', '/^(bar|line)\z/', 'bar');
+$monthgraphtype = getValidParam('monthgraphtype', '/^(bar|line)\z/', 'bar');
+$comparegraphtype = getValidParam('comparegraphtype', '/^(bar|line)\z/', 'bar');
 
-/* Get selected date/month if given */
-$daytoshow = (array_key_exists('daytoshow', $_GET) ? $_GET['daytoshow'] : '');
-$daygiven = (array_key_exists('daytoshow', $_GET) and $_GET['daytoshow'] != '') ? True : False;
+/* Get selected date/month if given (timestamps) */
+$daytoshow = getValidParam('daytoshow', '/^[0-9]{1,12}\z/', '');
+$daygiven = ($daytoshow !== '');
 
-$monthtoshow = (array_key_exists('monthtoshow', $_GET) ? $_GET['monthtoshow'] : '');
-$monthgiven = (array_key_exists('monthtoshow', $_GET) and $_GET['monthtoshow'] != '') ? True : False;
+$monthtoshow = getValidParam('monthtoshow', '/^[0-9]{1,12}\z/', '');
+$monthgiven = ($monthtoshow !== '');
 
-$yeartoshow = (array_key_exists('yeartoshow', $_GET) ? $_GET['yeartoshow'] : '');
-$yeargiven = (array_key_exists('yeartoshow', $_GET) and $_GET['yeartoshow'] != '') ? True : False;
+$yeartoshow = getValidParam('yeartoshow', '/^[0-9]{1,12}\z/', '');
+$yeargiven = ($yeartoshow !== '');
 
-$typetocompare = (array_key_exists('typetocompare', $_GET) ? $_GET['typetocompare'] : 'day');
-$datetocompare1 = (array_key_exists('datetocompare1', $_GET) ? $_GET['datetocompare1'] : '');
-$datetocompare2 = (array_key_exists('datetocompare2', $_GET) ? $_GET['datetocompare2'] : '');
-$comparesgiven = ((array_key_exists('datetocompare1', $_GET) and $_GET['datetocompare1'] != '') and (array_key_exists('datetocompare2', $_GET) and $_GET['datetocompare2'] != '')) ? True : False;
+$typetocompare = getValidParam('typetocompare', '/^(day|month|year)\z/', 'day');
+$datetocompare1 = getValidParam('datetocompare1', '/^[0-9]{1,12}\z/', '');
+$datetocompare2 = getValidParam('datetocompare2', '/^[0-9]{1,12}\z/', '');
+$comparesgiven = ($datetocompare1 !== '' && $datetocompare2 !== '');
 
 
 /* Set tab to show */
-$tabtoshow = (array_key_exists('tabtoshow', $_GET) ? $_GET['tabtoshow'] : 'hours');
+$tabtoshow = getValidParam('tabtoshow', '/^(hours|days|months|top10|compare)\z/', 'hours');
 
 $database = new Vnstat\Database($interface);
 
