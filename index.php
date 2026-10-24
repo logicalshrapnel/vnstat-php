@@ -33,39 +33,52 @@ if (count($_GET) <= 1) {
 	$showsent = $showrec = $twoAxes = True;
 }
 
+/* Return a GET parameter if it is a string matching the pattern, otherwise the default */
+function getValidParam($name, $pattern, $default) {
+	if (array_key_exists($name, $_GET) && is_string($_GET[$name]) && preg_match($pattern, $_GET[$name])) {
+		return $_GET[$name];
+	}
+	return $default;
+}
+
 /* Set  graph formats */
-$hourgraphtype = (array_key_exists('hourgraphtype', $_GET) ? $_GET['hourgraphtype'] : 'bar');
-$daygraphtype = (array_key_exists('daygraphtype', $_GET) ? $_GET['daygraphtype'] : 'bar');
-$monthgraphtype = (array_key_exists('monthgraphtype', $_GET) ? $_GET['monthgraphtype'] : 'bar');
-$comparegraphtype = (array_key_exists('comparegraphtype', $_GET) ? $_GET['comparegraphtype'] : 'bar');
+$hourgraphtype = getValidParam('hourgraphtype', '/^(bar|line)\z/', 'bar');
+$daygraphtype = getValidParam('daygraphtype', '/^(bar|line)\z/', 'bar');
+$monthgraphtype = getValidParam('monthgraphtype', '/^(bar|line)\z/', 'bar');
+$comparegraphtype = getValidParam('comparegraphtype', '/^(bar|line)\z/', 'bar');
 
-/* Get selected date/month if given */
-$daytoshow = (array_key_exists('daytoshow', $_GET) ? $_GET['daytoshow'] : '');
-$daygiven = (array_key_exists('daytoshow', $_GET) and $_GET['daytoshow'] != '') ? True : False;
+/* Get selected date/month if given (timestamps) */
+$daytoshow = getValidParam('daytoshow', '/^[0-9]{1,12}\z/', '');
+$daygiven = ($daytoshow !== '');
 
-$monthtoshow = (array_key_exists('monthtoshow', $_GET) ? $_GET['monthtoshow'] : '');
-$monthgiven = (array_key_exists('monthtoshow', $_GET) and $_GET['monthtoshow'] != '') ? True : False;
+$monthtoshow = getValidParam('monthtoshow', '/^[0-9]{1,12}\z/', '');
+$monthgiven = ($monthtoshow !== '');
 
-$yeartoshow = (array_key_exists('yeartoshow', $_GET) ? $_GET['yeartoshow'] : '');
-$yeargiven = (array_key_exists('yeartoshow', $_GET) and $_GET['yeartoshow'] != '') ? True : False;
+$yeartoshow = getValidParam('yeartoshow', '/^[0-9]{1,12}\z/', '');
+$yeargiven = ($yeartoshow !== '');
 
-$typetocompare = (array_key_exists('typetocompare', $_GET) ? $_GET['typetocompare'] : 'day');
-$datetocompare1 = (array_key_exists('datetocompare1', $_GET) ? $_GET['datetocompare1'] : '');
-$datetocompare2 = (array_key_exists('datetocompare2', $_GET) ? $_GET['datetocompare2'] : '');
-$comparesgiven = ((array_key_exists('datetocompare1', $_GET) and $_GET['datetocompare1'] != '') and (array_key_exists('datetocompare2', $_GET) and $_GET['datetocompare2'] != '')) ? True : False;
+$typetocompare = getValidParam('typetocompare', '/^(day|month|year)\z/', 'day');
+$datetocompare1 = getValidParam('datetocompare1', '/^[0-9]{1,12}\z/', '');
+$datetocompare2 = getValidParam('datetocompare2', '/^[0-9]{1,12}\z/', '');
+$comparesgiven = ($datetocompare1 !== '' && $datetocompare2 !== '');
 
 
 /* Set tab to show */
-$tabtoshow = (array_key_exists('tabtoshow', $_GET) ? $_GET['tabtoshow'] : 'hours');
+$tabtoshow = getValidParam('tabtoshow', '/^(hours|days|months|top10|compare)\z/', 'hours');
 
 $database = new Vnstat\Database($interface);
 
+/* Format a byte count with binary units. GiB and TiB get two decimal places,
+   smaller units are rounded to whole numbers (as before). */
 function formatBytes($bytes) {
 	$units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-	$pow   = floor(($bytes ? log($bytes) : 0) / log(1024));
-	$pow   = min($pow, count($units) - 1);
+	$pow   = (int) floor(($bytes > 0 ? log($bytes) : 0) / log(1024));
+	$pow   = max(0, min($pow, count($units) - 1));
 	$bytes /= pow(1024, $pow);
 
+	if ($pow >= 3) {
+		return number_format($bytes, 2, '.', '') . ' ' . $units[$pow];
+	}
 	return round($bytes) . ' ' . $units[$pow];
 }
 
@@ -150,7 +163,7 @@ function filterDataForTimePeriodandIntervalType($data, $type, $fromStamp, $toSta
 		/* Store xvalue, data value and timestamp to use for sorting */
 		if ($dateTime >= $fromStamp and  $dateTime <= $toStamp  ) {
 			$receivedData['data'][] = ['x' => $xValue, 'y' => $item->getBytesReceived(), 'timestamp' => $item->getDateTime()->getTimestamp(), 'label' => formatBytes($item->getBytesReceived())];
-			$sentData['data'][] = ['x' => $xValue, 'y' => $item->getBytesSent(), 'timestamp' => $item->getDateTime()->getTimestamp(), 'label' => formatBytes($item->getBytesReceived())];
+			$sentData['data'][] = ['x' => $xValue, 'y' => $item->getBytesSent(), 'timestamp' => $item->getDateTime()->getTimestamp(), 'label' => formatBytes($item->getBytesSent())];
 
 			$receivedData['legend'] = $item->getDateTime()->format($legendFormat);
 			$sentData['legend'] = $item->getDateTime()->format($legendFormat);
@@ -219,11 +232,14 @@ function renderChartJs($allData, $chartName, $graphtype, $showrec, $showsent,$tw
 	<canvas id="<?=$chartName."-jsChart"?>"></canvas>
 
 	<script type="text/javascript">
+		/* Format bytes for axis ticks and tooltips. Math.pow instead of a bit shift:
+		   in JavaScript "1 << 40" is 256 (32-bit shift), which made TiB values huge. */
 		function formatBytes(value, index, values) {
 			var units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-			var pow   = Math.floor((value ? Math.log(value) : 0) / Math.log(1024));
-			pow = Math.min(pow, units.length - 1);
-			return (Math.round(value / (1 << (10 * pow)) * 10) / 10) + ' ' + units[pow];
+			var pow   = Math.floor((value > 0 ? Math.log(value) : 0) / Math.log(1024));
+			pow = Math.max(0, Math.min(pow, units.length - 1));
+			var scaled = value / Math.pow(1024, pow);
+			return (pow >= 3 ? scaled.toFixed(2) : (Math.round(scaled * 10) / 10)) + ' ' + units[pow];
 		}
 	
 		var ctx = document.getElementById(<?="'".$chartName."-jsChart'"?>).getContext('2d');
@@ -243,6 +259,13 @@ function renderChartJs($allData, $chartName, $graphtype, $showrec, $showsent,$tw
 			options: {
 				legend: {
 					position: 'bottom'
+				},
+				tooltips: {
+					callbacks: {
+						label: function(item, data) {
+							return data.datasets[item.datasetIndex].label + ': ' + formatBytes(item.yLabel);
+						}
+					}
 				},
 				scales: {
 					yAxes: [
@@ -556,7 +579,7 @@ function renderCompareChart($database,$showrec,$showsent,$comparegraphtype,$date
 		<title>Network Traffic</title>
 		<link href="bootstrap-3.2.0-dist/css/bootstrap.min.css" rel="stylesheet" />
 		<link href="bootstrap-3.2.0-dist/css/bootstrap-theme.min.css" rel="stylesheet" />
-		<script src="http://code.jquery.com/jquery-1.11.0.min.js"></script>
+		<script src="https://code.jquery.com/jquery-1.11.0.min.js"></script>
 		<script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
 		<link rel="stylesheet" href="styles.css">
 	</head>
