@@ -68,12 +68,17 @@ $tabtoshow = getValidParam('tabtoshow', '/^(hours|days|months|top10|compare)\z/'
 
 $database = new Vnstat\Database($interface);
 
+/* Format a byte count with binary units. GiB and TiB get two decimal places,
+   smaller units are rounded to whole numbers (as before). */
 function formatBytes($bytes) {
 	$units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-	$pow   = floor(($bytes ? log($bytes) : 0) / log(1024));
-	$pow   = min($pow, count($units) - 1);
+	$pow   = (int) floor(($bytes > 0 ? log($bytes) : 0) / log(1024));
+	$pow   = max(0, min($pow, count($units) - 1));
 	$bytes /= pow(1024, $pow);
 
+	if ($pow >= 3) {
+		return number_format($bytes, 2, '.', '') . ' ' . $units[$pow];
+	}
 	return round($bytes) . ' ' . $units[$pow];
 }
 
@@ -158,7 +163,7 @@ function filterDataForTimePeriodandIntervalType($data, $type, $fromStamp, $toSta
 		/* Store xvalue, data value and timestamp to use for sorting */
 		if ($dateTime >= $fromStamp and  $dateTime <= $toStamp  ) {
 			$receivedData['data'][] = ['x' => $xValue, 'y' => $item->getBytesReceived(), 'timestamp' => $item->getDateTime()->getTimestamp(), 'label' => formatBytes($item->getBytesReceived())];
-			$sentData['data'][] = ['x' => $xValue, 'y' => $item->getBytesSent(), 'timestamp' => $item->getDateTime()->getTimestamp(), 'label' => formatBytes($item->getBytesReceived())];
+			$sentData['data'][] = ['x' => $xValue, 'y' => $item->getBytesSent(), 'timestamp' => $item->getDateTime()->getTimestamp(), 'label' => formatBytes($item->getBytesSent())];
 
 			$receivedData['legend'] = $item->getDateTime()->format($legendFormat);
 			$sentData['legend'] = $item->getDateTime()->format($legendFormat);
@@ -227,11 +232,14 @@ function renderChartJs($allData, $chartName, $graphtype, $showrec, $showsent,$tw
 	<canvas id="<?=$chartName."-jsChart"?>"></canvas>
 
 	<script type="text/javascript">
+		/* Format bytes for axis ticks and tooltips. Math.pow instead of a bit shift:
+		   in JavaScript "1 << 40" is 256 (32-bit shift), which made TiB values huge. */
 		function formatBytes(value, index, values) {
 			var units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-			var pow   = Math.floor((value ? Math.log(value) : 0) / Math.log(1024));
-			pow = Math.min(pow, units.length - 1);
-			return (Math.round(value / (1 << (10 * pow)) * 10) / 10) + ' ' + units[pow];
+			var pow   = Math.floor((value > 0 ? Math.log(value) : 0) / Math.log(1024));
+			pow = Math.max(0, Math.min(pow, units.length - 1));
+			var scaled = value / Math.pow(1024, pow);
+			return (pow >= 3 ? scaled.toFixed(2) : (Math.round(scaled * 10) / 10)) + ' ' + units[pow];
 		}
 	
 		var ctx = document.getElementById(<?="'".$chartName."-jsChart'"?>).getContext('2d');
@@ -251,6 +259,13 @@ function renderChartJs($allData, $chartName, $graphtype, $showrec, $showsent,$tw
 			options: {
 				legend: {
 					position: 'bottom'
+				},
+				tooltips: {
+					callbacks: {
+						label: function(item, data) {
+							return data.datasets[item.datasetIndex].label + ': ' + formatBytes(item.yLabel);
+						}
+					}
 				},
 				scales: {
 					yAxes: [
@@ -564,7 +579,7 @@ function renderCompareChart($database,$showrec,$showsent,$comparegraphtype,$date
 		<title>Network Traffic</title>
 		<link href="bootstrap-3.2.0-dist/css/bootstrap.min.css" rel="stylesheet" />
 		<link href="bootstrap-3.2.0-dist/css/bootstrap-theme.min.css" rel="stylesheet" />
-		<script src="http://code.jquery.com/jquery-1.11.0.min.js"></script>
+		<script src="https://code.jquery.com/jquery-1.11.0.min.js"></script>
 		<script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
 		<link rel="stylesheet" href="styles.css">
 	</head>
